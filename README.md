@@ -1,47 +1,55 @@
 # Fan100
 
-Script de PowerShell que pone todos los ventiladores del equipo al 100 % durante un tiempo fijo (o hasta que pulses una tecla) y después devuelve el control al firmware. Sirve para enfriar el equipo a fondo antes o después de una carga pesada, o para comprobar que los ventiladores responden.
+**English** | [Español](README.es.md)
 
-Usa [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) para acceder a los controles de la placa base, la CPU y la GPU.
+A PowerShell script that sets every fan in your computer to 100% for a fixed time (or until you press a key), then hands control back to the firmware. Use it to cool the machine down before or after a heavy workload, or to check that your fans respond.
 
-## Qué hace
+It uses [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) to reach the motherboard, CPU and GPU fan controls.
 
-1. Pide permisos de administrador si no los tiene (se relanza solo con UAC).
-2. Lee las temperaturas y las RPM iniciales.
-3. Fuerza al 100 % todos los controles de ventilador que expone el hardware y muestra cuáles ha podido controlar.
-4. Espera el tiempo indicado, con cuenta atrás, o hasta que pulses una tecla en modo endless.
-5. Muestra un resumen de RPM y temperaturas, de inicial a final. Las temperaturas que bajan salen en verde, las que suben en rojo y las que no cambian en azul.
-6. Restablece el control automático por firmware.
+## What it does
 
-Los ventiladores vuelven a control automático aunque cierres la ventana, cierres sesión o apagues el equipo con el script en marcha.
+1. Asks for administrator rights if it does not have them (it relaunches itself and shows the UAC prompt).
+2. Reads the initial temperatures and fan RPM.
+3. Forces every fan control the hardware exposes to 100% and lists which ones it could control.
+4. Waits for the chosen time with a countdown, or until you press a key in endless mode.
+5. Prints a summary of RPM and temperatures, from start to end. Temperatures that dropped are green, those that rose are red, and those that did not change are blue.
+6. Restores automatic firmware control.
 
-## Requisitos
+Fans go back to automatic control even if you close the window, log off or shut down while the script is running.
+
+## Requirements
 
 - Windows
-- [PowerShell 7](https://github.com/PowerShell/PowerShell) (`pwsh`)
-- `LibreHardwareMonitorLib.dll` en la misma carpeta que el script
-- Un equipo cuyo hardware permita controlar los ventiladores por software. Los controles sin soporte se muestran como `[--] ... (sin control)`.
+- [PowerShell 7](https://github.com/PowerShell/PowerShell) (`pwsh`). Windows PowerShell 5.1 (`powershell.exe`) is not supported.
+- `LibreHardwareMonitorLib.dll` in the same folder as the script
+- Hardware whose fans can be controlled by software. Controls that are not supported are shown as `[--] ... (sin control)`.
 
-## Uso
+## Usage
+
+Open PowerShell 7 in the project folder and run:
 
 ```powershell
-pwsh -File Fans30.ps1                # 60 segundos (por defecto)
-pwsh -File Fans30.ps1 --time 180     # N segundos
-pwsh -File Fans30.ps1 --endless      # hasta pulsar una tecla (ignora --time)
+pwsh -File Fans30.ps1                # 60 seconds (default)
+pwsh -File Fans30.ps1 --time 180     # N seconds
+pwsh -File Fans30.ps1 --endless      # until a key is pressed (ignores --time)
 ```
 
-| Opción | Descripción |
+| Option | Description |
 | --- | --- |
-| `--time <segundos>` | Duración en segundos. Debe ser un entero positivo. Por defecto, 60. |
-| `--endless` | Sin límite de tiempo: termina al pulsar cualquier tecla. Tiene prioridad sobre `--time`. |
+| `--time <seconds>` | Duration in seconds. Must be a positive integer. Default: 60. |
+| `--endless` | No time limit: it stops when you press any key. Takes precedence over `--time`. |
 
-## Accesos directos
+The script's on-screen messages are in Spanish.
 
-Los accesos directos (`*.lnk`) no se incluyen en el repositorio, porque apuntan a rutas absolutas de cada equipo. Para lanzar el script con un clic, crea tres desde la carpeta del proyecto con esta orden:
+## Shortcuts
 
-- `Fans 1min.lnk`: 60 segundos
-- `Fans 3min.lnk`: 180 segundos
-- `Fans Endless.lnk`: hasta pulsar una tecla
+Shortcuts (`*.lnk`) are not part of the repository, because they point to absolute paths on each computer. You can create your own in either of these ways.
+
+### Option A: create all three with one command
+
+1. Open the project folder in File Explorer (the one that contains `Fans30.ps1`).
+2. Click the address bar, type `pwsh` and press Enter. A PowerShell 7 window opens already in that folder. Alternatively, right-click an empty area of the folder and choose **Open in Terminal**, then make sure the terminal is PowerShell 7.
+3. Paste the following block and press Enter. It creates the shortcuts in the current folder:
 
 ```powershell
 $dir  = $PWD.Path
@@ -61,12 +69,31 @@ $ws   = New-Object -ComObject WScript.Shell
 }
 ```
 
-Después puedes copiarlos al escritorio, al menú Inicio o a la barra de tareas.
+This gives you:
 
-## Aviso
+- `Fans 1min.lnk`: 60 seconds
+- `Fans 3min.lnk`: 180 seconds
+- `Fans Endless.lnk`: until you press a key
 
-El script escribe en los controles de ventilador del hardware con permisos de administrador. Úsalo bajo tu responsabilidad. Si el proceso se mata de forma forzada (por ejemplo, terminando `pwsh` desde el Administrador de tareas) los ventiladores podrían quedarse al 100 % hasta reiniciar el equipo.
+You can then copy them to the desktop, the Start menu or the taskbar. If you move or rename the project folder, run the block again.
 
-## Créditos
+### Option B: create one by hand
 
-`LibreHardwareMonitorLib.dll` pertenece al proyecto [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) y se distribuye bajo su propia licencia (MPL 2.0).
+1. Right-click the desktop (or any folder) and choose **New > Shortcut**.
+2. In **Location**, paste the following line, replacing the path with the real location of `Fans30.ps1`, and change the last argument as needed (`--time 60`, `--time 180` or `--endless`):
+
+   ```text
+   pwsh -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\Fans30.ps1" --time 60
+   ```
+
+3. Click **Next**, name the shortcut and click **Finish**.
+
+If Windows cannot find `pwsh`, use its full path instead, for example `"C:\Program Files\PowerShell\7\pwsh.exe"`.
+
+## Warning
+
+The script writes to your hardware's fan controls with administrator rights. Use it at your own risk. If the process is killed forcibly (for example, ending `pwsh` from Task Manager), the fans may stay at 100% until you restart the computer.
+
+## Credits
+
+`LibreHardwareMonitorLib.dll` belongs to the [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) project and is distributed under its own license (MPL 2.0).

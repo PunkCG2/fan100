@@ -55,21 +55,27 @@ if ($consolaInteractiva) {
 # Espera hasta $milisegundos mirando si hay que cortar: Esc, o cualquier tecla con -Cualquiera
 # (modo endless). Devuelve $true solo en ese caso; el resto de teclas se descartan en silencio.
 function Espera-Tecla([int]$milisegundos, [switch]$Cualquiera) {
-    if (-not $conTeclado) {
-        Start-Sleep -Milliseconds $milisegundos
-        return $false
-    }
     $fin = [DateTime]::UtcNow.AddMilliseconds($milisegundos)
     $pulsada = $false
     while (-not $pulsada -and [DateTime]::UtcNow -lt $fin) {
+        if (-not $conTeclado) {
+            # Sin teclado no hay nada que sondear: una sola espera por el tiempo que falte.
+            Start-Sleep -Milliseconds ([math]::Max(1, [int]($fin - [DateTime]::UtcNow).TotalMilliseconds))
+            return $false
+        }
         try {
             if ([Console]::KeyAvailable) { $pulsada = $Cualquiera -or ([Console]::ReadKey($true).Key -eq [ConsoleKey]::Escape) }
         } catch {
-            Start-Sleep -Milliseconds $milisegundos
+            Start-Sleep -Milliseconds ([math]::Max(1, [int]($fin - [DateTime]::UtcNow).TotalMilliseconds))
             return $false
         }
         # Otras teclas se descartan en silencio, pero la cuenta atrás sigue a ritmo real.
-        if (-not $pulsada) { Start-Sleep -Milliseconds 50 }
+        # El sondeo nunca se pasa del final: Start-Sleep se_delay ~10-15 ms de más, y eso se
+        # acumulaba en cada vuelta hasta stretching el enfriamiento varios segundos.
+        if (-not $pulsada) {
+            $queda = [int]($fin - [DateTime]::UtcNow).TotalMilliseconds
+            if ($queda -gt 0) { Start-Sleep -Milliseconds ([math]::Min(50, $queda)) }
+        }
     }
     return $pulsada
 }
@@ -603,15 +609,20 @@ try {
         # tecla suelta no termine el ciclo nada más empezar.
         try { while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) } } catch { }
 
-        $t = 0
         $corteTecla = $false
         $primeraLinea = $true
+        # El bucle se guía por reloj, no contando vueltas: cada vuelta tarda lo que tarden en
+        # salir las lecturas de los sensores y en pintar el panel, y si se cuentasen vueltas de
+        # un segundo el enfriamiento se alargaba (un --time 60 acababa en 90 s o más). El plazo
+        # se fija una vez y en cada vuelta se calcula lo que queda de verdad.
+        $plazo = [DateTime]::UtcNow.AddSeconds($totalSegundos)
         while ($true) {
-            if (-not $endless -and $t -ge $totalSegundos) { break }
+            $quedan = ($plazo - [DateTime]::UtcNow).TotalSeconds
+            if (-not $endless -and $quedan -le 0) { break }
             $pie = if ($endless) {
-                'En marcha: {0} s a máxima velocidad (pulsa para salir)...' -f $t
+                'En marcha: {0} s a máxima velocidad (pulsa para salir)...' -f [int]$reloj.Elapsed.TotalSeconds
             } else {
-                'Quedan {0} s a máxima velocidad (Esc para cancelar)...' -f ($totalSegundos - $t)
+                'Quedan {0} s a máxima velocidad (Esc para cancelar)...' -f [int][math]::Ceiling($quedan)
             }
             $lineas = Get-LineasVivo $reparto $anchoColumna (Read-Sensors 'Temperature') (Read-Sensors 'Fan') $cabecera $pie
             if ($consolaInteractiva) {
@@ -623,8 +634,12 @@ try {
                 }
                 Write-Host ("`r" + $pie) -NoNewline -ForegroundColor Cyan
             }
-            if (Espera-Tecla 1000 -Cualquiera:$endless) { $corteTecla = $true; break }
-            $t++
+            if ($endless) {
+                if (Espera-Tecla 1000 -Cualquiera) { $corteTecla = $true; break }
+            } else {
+                $espera = [int][math]::Max(50, [math]::Min(1000, $quedan * 1000))
+                if (Espera-Tecla $espera) { $corteTecla = $true; break }
+            }
         }
 
         $reloj.Stop()

@@ -1,4 +1,4 @@
-# Fan100
+﻿# Fan100
 
 [English](README.md) | **Español**
 
@@ -9,7 +9,7 @@ Usa [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardware
 ## Qué hace
 
 1. Pide permisos de administrador si no los tiene (se relanza solo y aparece el aviso de UAC).
-2. Se niega a arrancar si ya hay un enfriamiento en marcha: dos sesiones a la vez pelearían por los mismos controles y el informe mentdría.
+2. Se niega a arrancar si ya hay un enfriamiento en marcha: dos sesiones a la vez pelearían por los mismos controles y el informe mentdría. El aviso te dice qué proceso lo tiene, para que puedas identificarlo y cerrarlo. Si sabes que no hay ninguno en marcha, relánzalo con `--forzar`.
 3. Lee las temperaturas y las RPM iniciales.
 4. Fuerza al 100 % todos los controles de ventilador que expone el hardware y muestra cuáles ha podido controlar. Si no controla ninguno, avisa y termina, porque no sirve de nada esperar el tiempo indicado para no poder enfriar nada.
 5. Muestra un panel en vivo que se refresca cada segundo: las temperaturas y las RPM de cada dispositivo, con la variación respecto al inicio (verde cuando va en la buena dirección, temperatura abajo o más RPM; rojo cuando va al revés; sin cambios en azul). Abajo del panel va la cuenta atrás. Espera el tiempo indicado, o hasta que pulses una tecla en modo endless. Durante la cuenta atrás puedes pulsar `Esc` para cortar el enfriamiento antes de tiempo y restablecer los ventiladores de inmediato.
@@ -57,6 +57,7 @@ pwsh -File Fans30.ps1 --endless      # hasta pulsar una tecla (ignora --time)
 | --- | --- |
 | `--time <segundos>` | Duración en segundos. Debe ser un entero positivo. Por defecto, 60. |
 | `--endless` | Sin límite de tiempo: termina al pulsar cualquier tecla. Tiene prioridad sobre `--time`. |
+| `--forzar` | Arranca aunque detecte otro enfriamiento en marcha. Úsalo solo si sabes que ese aviso es un error. |
 
 ## Accesos directos
 

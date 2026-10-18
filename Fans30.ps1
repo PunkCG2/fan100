@@ -1,6 +1,7 @@
-﻿# Uso: pwsh -File Fans30.ps1 [--time <segundos>] [--endless]   (por defecto 60 s; --endless ignora --time)
+﻿# Uso: pwsh -File Fans30.ps1 [--time <segundos>] [--endless] [--forzar]   (60 s por defecto; --endless ignora --time)
 $totalSegundos = 60
 $endless = $false
+$forzar = $false              # arranca aunque haya otro enfriamiento en marcha
 $segundosCierre = 10            # espera antes de cerrar al terminar, para poder leer el informe (0 = cierra al instante)
 $segundosCierreCorto = 3        # cuando no hay informe que leer: cancelado con Esc o sin ventiladores que controlar
 $carpetaLogs = 'logs'           # informes guardados junto al script, uno por dia (coolingLog_AAMMDD.txt)
@@ -14,6 +15,8 @@ for ($k = 0; $k -lt $args.Count; $k++) {
         $totalSegundos = [int]$args[$k]
     } elseif ($args[$k] -match '^--?endless$') {
         $endless = $true
+    } elseif ($args[$k] -match '^--?forzar$') {
+        $forzar = $true
     } else {
         Write-Host "Argumento desconocido: $($args[$k])" -ForegroundColor Red
         exit 1
@@ -71,6 +74,18 @@ function Espera-Tecla([int]$milisegundos, [switch]$Cualquiera) {
     return $pulsada
 }
 
+# Suelta el cerrojo de instancia única. Importante liberarlo a mano y no confiar solo en la
+# muerte del proceso: si el script se relanzó para pedir permisos, el proceso original sigue
+# vivo un momento y, sin esto, bloquearía un arranque posterior con "ya hay un enfriamiento".
+function Libera-Cerrojo {
+    if ($yaHayInstancia) { return }   # lo tenía otro proceso: no es nuestro y no se suelta
+    try {
+        $mutex.ReleaseMutex()
+    } catch {
+        # No lo poseíamos: no hay nada que hacer.
+    }
+}
+
 # Espera $segundos antes de cerrar, o hasta que se pulse una tecla (cierre inmediato).
 # Devuelve $true si el usuario pulsó una tecla. Si la entrada de la consola está
 # redirigida (sin teclado disponible), espera igualmente el tiempo completo.
@@ -107,23 +122,60 @@ function Espera-Cierre([int]$segundos) {
     return $false
 }
 
+# Identifica al proceso que ya tiene el cerrojo, para poder nombrarlo en el aviso en vez de
+# dejar al usuario adivinando. Busca otros PowerShell con este mismo script en su linea de
+# comandos y descarta el nuestro. Devuelve $null si no encuentra ninguno.
+function Get-ProcBloqueante {
+    try {
+        $nombres = @('pwsh', 'powershell')
+        foreach ($proc in (Get-Process | Where-Object { $nombres -contains $_.ProcessName })) {
+            if ($proc.Id -eq $PID) { continue }
+            $linea = (Get-CimInstance Win32_Process -Filter "ProcessId=$($proc.Id)").CommandLine
+            if ($linea -and $linea -like "*$([IO.Path]::GetFileName($PSCommandPath))*") {
+                return [pscustomobject]@{
+                    Id     = $proc.Id
+                    Inicio = $proc.StartTime.ToString('yyyy-MM-dd HH:mm:ss')
+                }
+            }
+        }
+    } catch { }
+    return $null
+}
+
 # Solo una instancia a la vez: dos enfriamientos simultaneos pelearian por los mismos
-# controles y el informe final mentiria. El mutex se libera solo al terminar el proceso.
+# controles y el informe final mentiria. El mutex se suelta solo al morir el proceso, asi que
+# hay que liberarlo a mano al salir: si no, el proceso original que relanza con UAC se
+# quedaria con el cerrojo puesto aunque su script ya haya acabado.
 $mutex = New-Object System.Threading.Mutex($false, 'Local\Fan100.Enfriamiento')
+# Ojo con la semantica: WaitOne devuelve $true cuando NOSOTROS tomamos el mutex, no cuando
+# hay otra instancia en marcha. Hay que invertirlo o el script no arranca nunca.
 $yaHayInstancia = $false
 try {
-    $yaHayInstancia = $mutex.WaitOne(0, $false)
+    $yaHayInstancia = -not $mutex.WaitOne(0, $false)
 } catch [System.Threading.AbandonedMutexException] {
-    $yaHayInstancia = $false   # la instancia anterior murio sin soltar: el mutex es nuestro
+    $yaHayInstancia = $false   # nos lo cede: la instancia anterior murio sin soltar
 }
-if ($yaHayInstancia) {
+if ($yaHayInstancia -and -not $forzar) {
     Write-Host "Ya hay un enfriamiento en marcha. Espera a que termine antes de iniciar otro." -ForegroundColor Red
+    $bloqueante = Get-ProcBloqueante
+    if ($bloqueante) {
+        Write-Host ("  Lo tiene el proceso {0}, iniciado el {1}." -f $bloqueante.Id, $bloqueante.Inicio) -ForegroundColor Red
+        Write-Host "  Ciérrale la ventana para cortarlo, o termina ese proceso a mano." -ForegroundColor Red
+    } else {
+        Write-Host "  No se ha podido identificar qué proceso lo mantiene: puede ser otra copia del script." -ForegroundColor Red
+        Write-Host "  Cierra la otra ventana de PowerShell que esté enfriando." -ForegroundColor Red
+        Write-Host "  Si sabes que no hay ninguna en marcha, relánzalo con --forzar." -ForegroundColor Red
+    }
     [void](Espera-Cierre $segundosCierreCorto)
     exit 1
+}
+if ($yaHayInstancia) {
+    Write-Host "Aviso: se ignora el enfriamiento en marcha porque has pasado --forzar." -ForegroundColor Yellow
 }
 
 if (-not (Test-Path $libPath)) {
     Write-Host "No se encuentra LibreHardwareMonitorLib.dll en $PSScriptRoot" -ForegroundColor Red
+    Libera-Cerrojo
     [void](Espera-Cierre $segundosCierre)
     exit 1
 }
@@ -526,6 +578,7 @@ try {
     }
 
     Write-Host ""
+    Libera-Cerrojo   # ya no queda nada que proteger: que otro arranque no espere a este cierre
     $esperaCierre = if ($motivoCorte) { $segundosCierreCorto } else { $segundosCierre }
     if (Espera-Cierre $esperaCierre) {
         Write-Host "Cerrando ahora (tecla pulsada)." -ForegroundColor Cyan

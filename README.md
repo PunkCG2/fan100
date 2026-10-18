@@ -57,6 +57,7 @@ pwsh -File Fans30.ps1 --endless      # until a key is pressed (ignores --time)
 | --- | --- |
 | `--time <seconds>` | Duration in seconds. Must be a positive integer. Default: 60. |
 | `--endless` | No time limit: it stops when you press any key. Takes precedence over `--time`. |
+| `--forzar` | Starts even if another cooling run is detected. Use it only when you know that warning is wrong. |
 
 The script's on-screen messages are in Spanish.
 

@@ -322,15 +322,20 @@ function Get-PlantillaVivo($tempIni, $fanIni, $anchoNombre) {
 }
 
 # Si el panel no cabe en la ventana se corta por abajo (lo menos importante) y se avisa.
+# $maxFilas = 0 significa que no cabe ni un sensor: el panel queda solo con cabecera y pie.
 function Recorta-Vivo($filas, $maxFilas) {
-    if ($maxFilas -le 0 -or $filas.Count -le $maxFilas) { return , $filas }
+    if ($maxFilas -le 0) { return @() }
+    if ($filas.Count -le $maxFilas) { return , $filas }
     $visibles = @($filas[0..($maxFilas - 1)])
     # Un título sin sensores debajo no aporta nada.
     if ($visibles.Count -gt 2 -and $visibles[-1].Titulo) { $visibles = @($visibles[0..($visibles.Count - 2)]) }
+    # Esta fila es solo texto: lleva Titulo = $false pero no Id, para que Get-LineasVivo la
+    # pinte tal cual en vez de intentar buscarle un sensor que no existe.
     $visibles += [pscustomobject]@{
         Titulo = $false
         Texto  = ('  ... y {0} sensores más que no caben en la ventana' -f ($filas.Count - $visibles.Count))
         Color  = 'DarkGray'
+        Fija   = $true
     }
     return , $visibles
 }
@@ -344,12 +349,14 @@ function Get-LineasVivo($plantilla, $tempFin, $fanFin, $cabecera, $pie) {
     )
 
     foreach ($fila in $plantilla) {
-        if ($fila.Titulo) {
+        if ($fila.Titulo -or $fila.Fija) {
+            # Título de hardware o aviso de "y N sensores más": se pinta tal cual.
             $lineas += [pscustomobject]@{ Texto = $fila.Texto; Color = $fila.Color }
             continue
         }
         $sensor = if ($fila.Unidad -eq '°C') { $tempFin[$fila.Id] } else { $fanFin[$fila.Id] }
         if ($null -eq $sensor) {
+            # El sensor no está en la lectura actual: se marca en vez de fallar.
             $lineas += [pscustomobject]@{ Texto = ('    {0}  --' -f $fila.Nombre.PadRight(20)); Color = 'DarkGray' }
             continue
         }
@@ -501,7 +508,20 @@ try {
         $anchoNombre = [math]::Max(14, [math]::Min(26, $anchoPanel - 34))
         $maxFilas = 0
         if ($consolaInteractiva) {
-            try { $maxFilas = [math]::Max(1, [Console]::WindowHeight - [Console]::GetCursorPosition().Item2 - 2) } catch { $consolaInteractiva = $false }
+            try {
+                # Get-LineasVivo añade 4 líneas fijas (cabecera, hueco, hueco y pie): hay que
+                # descontarlas aquí o el panel no cabe, la consola hace scroll y el redibujo
+                # del bloque se descuadra. El margen final deja libres las dos últimas filas:
+                # una porque la última línea justa provoca scroll en algunas consolas, y otra
+                # porque al pintar el cuadro final la ventana puede haber cambiado de alto.
+                $maxFilas = [Console]::WindowHeight - [Console]::GetCursorPosition().Item2 - 6
+                # Con una ventana enana y mucho texto previo no cabe ni un sensor: en ese caso
+                # no se pinta panel (haría scroll y descuadraría el bloque) y se deja solo la
+                # cuenta atrás, que cabe en cualquier ventana.
+                if ($maxFilas -lt 1) { $maxFilas = 0 }
+            } catch {
+                $consolaInteractiva = $false
+            }
         }
         $plantilla = Recorta-Vivo (Get-PlantillaVivo $tempIni $fanIni $anchoNombre) $maxFilas
         $cabecera = 'Enfriamiento a máxima velocidad' + $(if ($endless) { ' (modo endless)' })
@@ -563,6 +583,17 @@ try {
         }
     }
 
+} catch {
+    # Sin esto, un fallo a mitad del ciclo solo aparecía al final, tras la cuenta atrás de
+    # cierre, y parecía que el enfriamiento se acababa antes de empezar.
+    $errorCiclo = $_
+    Write-Host ""
+    Write-Host "ERROR inesperado durante el enfriamiento:" -ForegroundColor Red
+    Write-Host ("  " + $errorCiclo.Exception.Message) -ForegroundColor Red
+    if ($errorCiclo.InvocationInfo) {
+        Write-Host ("  en la línea " + $errorCiclo.InvocationInfo.ScriptLineNumber + ": " + $errorCiclo.InvocationInfo.Line.Trim()) -ForegroundColor Red
+    }
+    $motivoCorte = 'error'
 } finally {
     Write-Host ""
     Write-Host "Restableciendo ventiladores al control automático por firmware..." -ForegroundColor Green

@@ -14,7 +14,7 @@ It uses [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHard
 4. Waits for the chosen time with a countdown, or until you press a key in endless mode. During the countdown you can press `Esc` to cut cooling short and restore the fans right away.
 5. Prints a summary of RPM and temperatures, from start to end. Temperatures that dropped are green, those that rose are red, and those that did not change are blue.
 6. Restores automatic firmware control.
-7. Closes the window on its own after a 10 second countdown. Press any key before that and it closes right away.
+7. Closes the window on its own after a 10 second countdown so you can read the report. Press any key before that and it closes right away. If you aborted with `Esc` there is no report to read, so the wait drops to 3 seconds.
 
 Fans go back to automatic control even if you close the window, log off or shut down while the script is running.
 

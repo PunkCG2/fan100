@@ -1,7 +1,8 @@
 ﻿# Uso: pwsh -File Fans30.ps1 [--time <segundos>] [--endless]   (por defecto 60 s; --endless ignora --time)
 $totalSegundos = 60
 $endless = $false
-$segundosCierre = 10   # espera antes de cerrar la ventana al terminar (0 = cierra al instante)
+$segundosCierre = 10            # espera antes de cerrar al terminar, para poder leer el informe (0 = cierra al instante)
+$segundosCierreCancelado = 3    # al cancelar con Esc no hay informe que leer, asi que se cierra antes
 for ($k = 0; $k -lt $args.Count; $k++) {
     if ($args[$k] -match '^--?time$') {
         $k++
@@ -243,7 +244,8 @@ try {
     $computer.Close()
 
     Write-Host ""
-    if (Espera-Cierre $segundosCierre) {
+    $esperaCierre = if ($cancelado) { $segundosCierreCancelado } else { $segundosCierre }
+    if (Espera-Cierre $esperaCierre) {
         Write-Host "Cerrando ahora (tecla pulsada)." -ForegroundColor Cyan
     }
 }

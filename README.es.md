@@ -14,7 +14,7 @@ Usa [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardware
 4. Espera el tiempo indicado, con cuenta atrás, o hasta que pulses una tecla en modo endless. Durante la cuenta atrás puedes pulsar `Esc` para cortar el enfriamiento antes de tiempo y restablecer los ventiladores de inmediato.
 5. Muestra un resumen de RPM y temperaturas, de inicial a final. Las temperaturas que bajan salen en verde, las que suben en rojo y las que no cambian en azul.
 6. Restablece el control automático por firmware.
-7. Cierra la ventana solo, con una cuenta atrás de 10 segundos. Si pulsas cualquier tecla antes, cierra al instante.
+7. Cierra la ventana solo, con una cuenta atrás de 10 segundos para que puedas leer el informe. Si pulsas cualquier tecla antes, cierra al instante. Si has cancelado con `Esc`, la espera es de solo 3 segundos porque no hay informe que mostrar.
 
 Los ventiladores vuelven a control automático aunque cierres la ventana, cierres sesión o apagues el equipo con el script en marcha.
 

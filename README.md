@@ -1,4 +1,4 @@
-# Fan100
+﻿# Fan100
 
 **English** | [Español](README.es.md)
 
@@ -12,7 +12,7 @@ It uses [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHard
 2. Refuses to start if a cooling run is already in progress: two sessions at once would fight over the same controls and the report would lie.
 3. Reads the initial temperatures and fan RPM.
 4. Forces every fan control the hardware exposes to 100% and lists which ones it could control. If it could control none, it says so and stops, because there is no point in waiting when nothing can be cooled.
-5. Shows a live panel that refreshes every second: the temperatures and RPM of every device, with the change since the start (green when it moves the right way, temperature down or more RPM; red when it moves the wrong way; unchanged in blue). The countdown sits at the bottom of the panel. It waits for the chosen time, or until you press a key in endless mode. During the countdown you can press `Esc` to cut cooling short and restore the fans right away.
+5. Shows a live panel that refreshes every second: the temperatures and RPM of every device, with the change since the start (green when it moves the right way, temperature down or more RPM; red when it moves the wrong way; unchanged in blue). The panel spreads over several columns when the window is wide enough to fit every sensor, and only mentions the ones it had to leave out when they really do not fit. The countdown sits at the bottom of the panel. It waits for the chosen time, or until you press a key in endless mode. During the countdown you can press `Esc` to cut cooling short and restore the fans right away.
 6. Leaves a last frame on screen with the final state of every sensor, then prints a summary of the duration, RPM and temperatures, from start to end. Temperatures that dropped are green, those that rose are red, and those that did not change are blue.
 7. Restores automatic firmware control and **checks that it worked**: if a fan is left under software control it warns in red, naming the control, so you can set it by hand.
 8. Saves the report to `logs\coolingLog_AAMMDD.txt` (one file per day, one block per run) and closes the window on its own after a 10 second countdown so you can read the report. Press any key before that and it closes right away. If you aborted with `Esc`, or there were no controllable fans, there is no report to read, so the wait drops to 3 seconds.

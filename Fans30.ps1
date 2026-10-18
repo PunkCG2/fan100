@@ -321,70 +321,136 @@ function Get-PlantillaVivo($tempIni, $fanIni, $anchoNombre) {
     return , $filas
 }
 
-# Si el panel no cabe en la ventana se corta por abajo (lo menos importante) y se avisa.
-# $maxFilas = 0 significa que no cabe ni un sensor: el panel queda solo con cabecera y pie.
-function Recorta-Vivo($filas, $maxFilas) {
-    if ($maxFilas -le 0) { return @() }
-    if ($filas.Count -le $maxFilas) { return , $filas }
-    $visibles = @($filas[0..($maxFilas - 1)])
-    # Un título sin sensores debajo no aporta nada.
-    if ($visibles.Count -gt 2 -and $visibles[-1].Titulo) { $visibles = @($visibles[0..($visibles.Count - 2)]) }
-    # Esta fila es solo texto: lleva Titulo = $false pero no Id, para que Get-LineasVivo la
-    # pinte tal cual en vez de intentar buscarle un sensor que no existe.
-    $visibles += [pscustomobject]@{
-        Titulo = $false
-        Texto  = ('  ... y {0} sensores más que no caben en la ventana' -f ($filas.Count - $visibles.Count))
-        Color  = 'DarkGray'
-        Fija   = $true
+# Cuántas columnas caben en el ancho de la ventana. Con dos caben el doble de sensores, que
+# es lo que hace falta en máquinas con muchos ventiladores. Cada columna reserva 38 caracteres
+# para el sensor y 2 de separación.
+function Get-ColumnasVivo([int]$anchoVentana) {
+    $porColumna = 40
+    $posibles = [math]::Floor($anchoVentana / $porColumna)
+    if ($posibles -lt 1) { return 1 }
+    if ($posibles -gt 3) { return 3 }
+    return [int]$posibles
+}
+
+# Reparte las filas en varias columnas a la altura, para que quepan muchos más sensores en la
+# misma ventana. Devuelve @{ Columnas; Alto } con las filas ya repartidas y la altura común.
+function Reparte-Vivo($filas, [int]$columnas) {
+    if ($columnas -lt 2 -or $filas.Count -le 12) { return @{ Columnas = @(,$filas); Alto = $filas.Count } }
+
+    # Se agrupan las filas por hardware: un dispositivo no se parte entre dos columnas.
+    $grupos = @()
+    $actual = @()
+    foreach ($fila in $filas) {
+        if ($fila.Titulo -and $actual.Count -gt 0) { $grupos += , @($actual); $actual = @() }
+        $actual += $fila
     }
-    return , $visibles
+    if ($actual.Count -gt 0) { $grupos += , @($actual) }
+
+    # Se van colocando los grupos en la columna más corta: reparte mejor queround-robin.
+    $cols = @()
+    $altos = @()
+    for ($c = 0; $c -lt $columnas; $c++) { $cols += , @(); $altos += 0 }
+    foreach ($g in $grupos) {
+        $corta = 0
+        for ($c = 1; $c -lt $columnas; $c++) { if ($altos[$c] -lt $altos[$corta]) { $corta = $c } }
+        $cols[$corta] = @($cols[$corta]) + @($g)
+        $altos[$corta] += $g.Count
+    }
+
+    $alto = 0
+    foreach ($h in $altos) { if ($h -gt $alto) { $alto = $h } }
+    return @{ Columnas = $cols; Alto = $alto }
+}
+
+# Si el panel no cabe en la ventana se corta por abajo (lo menos importante) y se avisa.
+# Se aplica DESPUÉS de repartir en columnas: si se recortara antes, al repartirse de nuevo
+# volvería a crecer. $maxFilas = 0 deja el panel solo con cabecera y pie.
+function Recorta-Vivo($reparto, $maxFilas) {
+    if ($maxFilas -le 0) { return @{ Columnas = @(,@()); Alto = 0 } }
+    if ($reparto.Alto -le $maxFilas) { return $reparto }
+
+    $columnas = $reparto.Columnas
+    $ocultos = 0
+    $nuevas = @()
+    foreach ($col in $columnas) {
+        if ($col.Count -le $maxFilas) { $nuevas += , $col; continue }
+        $visibles = @($col[0..($maxFilas - 1)])
+        # Un título sin sensores debajo no aporta nada.
+        if ($visibles.Count -gt 1 -and $visibles[-1].Titulo) { $visibles = @($visibles[0..($visibles.Count - 2)]) }
+        $ocultos += @($col[$visibles.Count..($col.Count - 1)] | Where-Object { -not $_.Titulo }).Count
+        $nuevas += , $visibles
+    }
+
+    if ($ocultos -gt 0) {
+        # Esta fila es solo texto: lleva Titulo = $false pero no Id, para que Get-LineasVivo la
+        # pinte tal cual en vez de intentar buscarle un sensor que no existe.
+        $aviso = [pscustomobject]@{
+            Titulo = $false
+            Texto  = ('  ... y {0} sensores más que no caben' -f $ocultos)
+            Color  = 'DarkGray'
+            Fija   = $true
+        }
+        $primera = @($nuevas[0][0..($nuevas[0].Count - 1)]) + $aviso
+        $nuevas[0] = $primera
+    }
+
+    $alto = 0
+    foreach ($col in $nuevas) { if ($col.Count -gt $alto) { $alto = $col.Count } }
+    return @{ Columnas = $nuevas; Alto = $alto }
 }
 
 # Un cuadro del panel: una línea por sensor con su valor actual y la variación desde el
 # inicio (verde si va en la dirección buena: temperatura abajo o más RPM).
-function Get-LineasVivo($plantilla, $tempFin, $fanFin, $cabecera, $pie) {
+function Get-LineasVivo($reparto, [int]$anchoColumna, $tempFin, $fanFin, $cabecera, $pie) {
     $lineas = @(
         [pscustomobject]@{ Texto = $cabecera; Color = 'White' }
         [pscustomobject]@{ Texto = ''; Color = 'Gray' }
     )
 
-    foreach ($fila in $plantilla) {
-        if ($fila.Titulo -or $fila.Fija) {
-            # Título de hardware o aviso de "y N sensores más": se pinta tal cual.
-            $lineas += [pscustomobject]@{ Texto = $fila.Texto; Color = $fila.Color }
-            continue
+    $columnas = $reparto.Columnas
+    $alto = 0
+    foreach ($col in $columnas) { if ($col.Count -gt $alto) { $alto = $col.Count } }
+
+    for ($i = 0; $i -lt $alto; $i++) {
+        $texto = ''
+        foreach ($col in $columnas) {
+            $celda = if ($i -lt $col.Count) { Formatea-CeldaVivo $col[$i] $tempFin $fanFin $anchoColumna } else { '' }
+            $texto += $celda
         }
-        $sensor = if ($fila.Unidad -eq '°C') { $tempFin[$fila.Id] } else { $fanFin[$fila.Id] }
-        if ($null -eq $sensor) {
-            # El sensor no está en la lectura actual: se marca en vez de fallar.
-            $lineas += [pscustomobject]@{ Texto = ('    {0}  --' -f $fila.Nombre.PadRight(20)); Color = 'DarkGray' }
-            continue
-        }
-        $cambio = if ($fila.Unidad -eq '°C') { [math]::Round($sensor.Value - $fila.Inicial, 1) } else { [math]::Round($sensor.Value - $fila.Inicial, 0) }
-        if ($cambio -eq 0) {
-            # Sin cambio respecto al inicio: no hace falta ensuciar la línea con un +0,0.
-            $texto = if ($fila.Unidad -eq '°C') {
-                '    {0}  {1,6:N1} °C' -f $fila.Nombre.PadRight(20), $sensor.Value
-            } else {
-                '    {0}  {1,6:N0} RPM' -f $fila.Nombre.PadRight(20), $sensor.Value
-            }
-            $lineas += [pscustomobject]@{ Texto = $texto; Color = 'Cyan' }
-            continue
-        }
-        # Verde si va en la dirección buena (temperatura abajo, más RPM), rojo si va al revés.
-        $sube = if ($fila.Unidad -eq '°C') { $cambio -lt 0 } else { $cambio -gt 0 }
-        $color = if ($sube) { 'Green' } else { 'Red' }
-        if ($fila.Unidad -eq '°C') {
-            $texto = '    {0}  {1,6:N1} °C  ({2:+0.0;-0.0})' -f $fila.Nombre.PadRight(20), $sensor.Value, $cambio
-        } else {
-            $texto = '    {0}  {1,6:N0} RPM  ({2:+0;-0})' -f $fila.Nombre.PadRight(20), $sensor.Value, $cambio
-        }
-        $lineas += [pscustomobject]@{ Texto = $texto; Color = $color }
+        $lineas += [pscustomobject]@{ Texto = $texto; Color = 'Gray' }
     }
 
     $lineas += [pscustomobject]@{ Texto = ''; Color = 'Gray' }
     $lineas += [pscustomobject]@{ Texto = $pie; Color = 'Cyan' }
     return , $lineas
+}
+
+# Un sensor del panel: valor actual y variación desde el inicio. Verde si va en la dirección
+# buena (temperatura abajo, más RPM), rojo si va al revés, gris si no se mueve.
+function Formatea-CeldaVivo($fila, $tempFin, $fanFin, [int]$ancho) {
+    if ($fila.Titulo -or $fila.Fija) {
+        # Título de hardware o aviso de "y N sensores más": se pinta tal cual.
+        return $fila.Texto.PadRight($ancho)
+    }
+    $sensor = if ($fila.Unidad -eq '°C') { $tempFin[$fila.Id] } else { $fanFin[$fila.Id] }
+    if ($null -eq $sensor) {
+        # El sensor no está en la lectura actual: se marca en vez de fallar.
+        return ('    {0}  --' -f $fila.Nombre.PadRight(20)).PadRight($ancho)
+    }
+    $cambio = if ($fila.Unidad -eq '°C') { [math]::Round($sensor.Value - $fila.Inicial, 1) } else { [math]::Round($sensor.Value - $fila.Inicial, 0) }
+    if ($cambio -eq 0) {
+        # Sin cambio respecto al inicio: no hace falta ensuciar la línea con un +0,0.
+        $texto = if ($fila.Unidad -eq '°C') {
+            '    {0}  {1,6:N1} °C' -f $fila.Nombre.PadRight(20), $sensor.Value
+        } else {
+            '    {0}  {1,6:N0} RPM' -f $fila.Nombre.PadRight(20), $sensor.Value
+        }
+        return $texto.PadRight($ancho)
+    }
+    if ($fila.Unidad -eq '°C') {
+        return ('    {0}  {1,6:N1} °C  ({2:+0.0;-0.0})' -f $fila.Nombre.PadRight(20), $sensor.Value, $cambio).PadRight($ancho)
+    }
+    return ('    {0}  {1,6:N0} RPM  ({2:+0;-0})' -f $fila.Nombre.PadRight(20), $sensor.Value, $cambio).PadRight($ancho)
 }
 
 # Redibuja el panel en el mismo sitio: sube el cursor tantas líneas como ocupa y vuelve a
@@ -431,7 +497,7 @@ function Get-LineasInforme($tempIni, $fanIni, $duracionSeg, $detalle) {
     }
 
     $lineas += [pscustomobject]@{ Texto = ''; Color = 'Gray' }
-    $lineas += [pscustomobject]@{ Texto = 'Temperaturas (°C inicial -> final; azul = sin cambio):'; Color = 'Yellow' }
+    $lineas += [pscustomobject]@{ Texto = 'Temperaturas (°C inicial -> final):'; Color = 'Yellow' }
 
     $tempFin = Read-Sensors 'Temperature'
     foreach ($id in $tempFin.Keys) {
@@ -523,7 +589,14 @@ try {
                 $consolaInteractiva = $false
             }
         }
-        $plantilla = Recorta-Vivo (Get-PlantillaVivo $tempIni $fanIni $anchoNombre) $maxFilas
+        $plantilla = Get-PlantillaVivo $tempIni $fanIni $anchoNombre
+        # Con ventana ancha se reparte en varias columnas para que quepan más sensores; si
+        # aun así no cabe, Recorta-Vivo deja solo los que entran y avisa de los demás.
+        $anchoVentana = if ($consolaInteractiva) { [Console]::WindowWidth - 1 } else { 80 }
+        $columnas = Get-ColumnasVivo $anchoVentana
+        $anchoColumna = [math]::Floor($anchoVentana / $columnas)
+        $reparto = Reparte-Vivo $plantilla $columnas
+        if ($reparto.Alto -gt $maxFilas) { $reparto = Recorta-Vivo $reparto $maxFilas }
         $cabecera = 'Enfriamiento a máxima velocidad' + $(if ($endless) { ' (modo endless)' })
 
         # Descarta lo que se haya pulsado mientras se activaban los ventiladores, para que una
@@ -540,7 +613,7 @@ try {
             } else {
                 'Quedan {0} s a máxima velocidad (Esc para cancelar)...' -f ($totalSegundos - $t)
             }
-            $lineas = Get-LineasVivo $plantilla (Read-Sensors 'Temperature') (Read-Sensors 'Fan') $cabecera $pie
+            $lineas = Get-LineasVivo $reparto $anchoColumna (Read-Sensors 'Temperature') (Read-Sensors 'Fan') $cabecera $pie
             if ($consolaInteractiva) {
                 Write-Vivo $lineas
             } else {
@@ -562,7 +635,7 @@ try {
         } else {
             # Último cuadro en pantalla, con el estado final de cada sensor.
             if (-not $consolaInteractiva) { Write-Host "" }
-            Write-Vivo (Get-LineasVivo $plantilla (Read-Sensors 'Temperature') (Read-Sensors 'Fan') $cabecera 'Enfriamiento terminado.')
+            Write-Vivo (Get-LineasVivo $reparto $anchoColumna (Read-Sensors 'Temperature') (Read-Sensors 'Fan') $cabecera 'Enfriamiento terminado.')
         }
     }
     Write-Host ""

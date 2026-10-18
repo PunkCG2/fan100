@@ -36,25 +36,39 @@ $libPath = Join-Path $PSScriptRoot "LibreHardwareMonitorLib.dll"
 $conTeclado = $true
 try { [void][Console]::KeyAvailable } catch { $conTeclado = $false }
 
-# Espera hasta $milisegundos mirando si se pulsa Esc; devuelve $true solo en ese caso.
-function Espera-Escape([int]$milisegundos) {
+# ¿Se puede redibujar el panel en el mismo sitio? Necesita una consola con manejador válido:
+# con la salida redirigida, mover el cursor y leer el tamaño de ventana lanzan excepción.
+$consolaInteractiva = -not [Console]::IsOutputRedirected
+$anchoPanel = 60
+if ($consolaInteractiva) {
+    try {
+        [void][Console]::GetCursorPosition()   # falla si no hay consola real
+        $anchoPanel = [math]::Max(40, [Console]::WindowWidth - 1)
+    } catch {
+        $consolaInteractiva = $false
+    }
+}
+
+# Espera hasta $milisegundos mirando si hay que cortar: Esc, o cualquier tecla con -Cualquiera
+# (modo endless). Devuelve $true solo en ese caso; el resto de teclas se descartan en silencio.
+function Espera-Tecla([int]$milisegundos, [switch]$Cualquiera) {
     if (-not $conTeclado) {
         Start-Sleep -Milliseconds $milisegundos
         return $false
     }
     $fin = [DateTime]::UtcNow.AddMilliseconds($milisegundos)
-    $escape = $false
-    while (-not $escape -and [DateTime]::UtcNow -lt $fin) {
+    $pulsada = $false
+    while (-not $pulsada -and [DateTime]::UtcNow -lt $fin) {
         try {
-            if ([Console]::KeyAvailable) { $escape = ([Console]::ReadKey($true).Key -eq [ConsoleKey]::Escape) }
+            if ([Console]::KeyAvailable) { $pulsada = $Cualquiera -or ([Console]::ReadKey($true).Key -eq [ConsoleKey]::Escape) }
         } catch {
             Start-Sleep -Milliseconds $milisegundos
             return $false
         }
         # Otras teclas se descartan en silencio, pero la cuenta atrás sigue a ritmo real.
-        if (-not $escape) { Start-Sleep -Milliseconds 50 }
+        if (-not $pulsada) { Start-Sleep -Milliseconds 50 }
     }
-    return $escape
+    return $pulsada
 }
 
 # Espera $segundos antes de cerrar, o hasta que se pulse una tecla (cierre inmediato).
@@ -195,13 +209,148 @@ function Read-Sensors($type) {
         foreach ($sensor in $hw.Sensors) {
             if ($sensor.SensorType -eq $type -and $null -ne $sensor.Value) {
                 $result[[string]$sensor.Identifier] = [pscustomobject]@{
-                    Name  = "$($hw.Name) / $($sensor.Name)"
-                    Value = [double]$sensor.Value
+                    Hardware = $hw.Name
+                    Sensor   = $sensor.Name
+                    Name     = "$($hw.Name) / $($sensor.Name)"
+                    Value    = [double]$sensor.Value
                 }
             }
         }
     }
     $result
+}
+
+# Colapsa espacios y recorta a $ancho caracteres con puntos suspensivos, para que los nombres
+# largos del hardware no descuadren el panel.
+function Acorta([string]$texto, [int]$ancho) {
+    $texto = ($texto -replace '\s+', ' ').Trim()
+    if ($texto.Length -le $ancho) { return $texto }
+    return $texto.Substring(0, $ancho - 1) + '…'
+}
+
+# Fija qué sensores se muestran durante el enfriamiento y en qué orden: primero las
+# temperaturas de cada hardware y luego sus ventiladores. Se calcula una sola vez porque el
+# panel debe conservar el mismo alto para poder redibujarse encima.
+function Get-PlantillaVivo($tempIni, $fanIni, $anchoNombre) {
+    $grupos = [ordered]@{}
+    foreach ($id in $tempIni.Keys) {
+        $hw = $tempIni[$id].Hardware
+        if (-not $grupos.Contains($hw)) { $grupos[$hw] = @{ Temps = @(); Fans = @() } }
+        $grupos[$hw].Temps += $id
+    }
+    foreach ($id in $fanIni.Keys) {
+        $hw = $fanIni[$id].Hardware
+        if (-not $grupos.Contains($hw)) { $grupos[$hw] = @{ Temps = @(); Fans = @() } }
+        $grupos[$hw].Fans += $id
+    }
+
+    $filas = @()
+    foreach ($hw in $grupos.Keys) {
+        $filas += [pscustomobject]@{ Titulo = $true; Texto = ('  ' + (Acorta $hw 60)); Color = 'Cyan' }
+        foreach ($id in $grupos[$hw].Temps) {
+            $filas += [pscustomobject]@{
+                Titulo  = $false
+                Nombre  = (Acorta $tempIni[$id].Sensor $anchoNombre)
+                Unidad  = '°C'
+                Id      = $id
+                Inicial = $tempIni[$id].Value
+            }
+        }
+        foreach ($id in $grupos[$hw].Fans) {
+            $filas += [pscustomobject]@{
+                Titulo  = $false
+                Nombre  = (Acorta $fanIni[$id].Sensor $anchoNombre)
+                Unidad  = 'RPM'
+                Id      = $id
+                Inicial = $fanIni[$id].Value
+            }
+        }
+    }
+    return , $filas
+}
+
+# Si el panel no cabe en la ventana se corta por abajo (lo menos importante) y se avisa.
+function Recorta-Vivo($filas, $maxFilas) {
+    if ($maxFilas -le 0 -or $filas.Count -le $maxFilas) { return , $filas }
+    $visibles = @($filas[0..($maxFilas - 1)])
+    # Un título sin sensores debajo no aporta nada.
+    if ($visibles.Count -gt 2 -and $visibles[-1].Titulo) { $visibles = @($visibles[0..($visibles.Count - 2)]) }
+    $visibles += [pscustomobject]@{
+        Titulo = $false
+        Texto  = ('  ... y {0} sensores más que no caben en la ventana' -f ($filas.Count - $visibles.Count))
+        Color  = 'DarkGray'
+    }
+    return , $visibles
+}
+
+# Un cuadro del panel: una línea por sensor con su valor actual y la variación desde el
+# inicio (verde si va en la dirección buena: temperatura abajo o más RPM).
+function Get-LineasVivo($plantilla, $tempFin, $fanFin, $cabecera, $pie) {
+    $lineas = @(
+        [pscustomobject]@{ Texto = $cabecera; Color = 'White' }
+        [pscustomobject]@{ Texto = ''; Color = 'Gray' }
+    )
+
+    foreach ($fila in $plantilla) {
+        if ($fila.Titulo) {
+            $lineas += [pscustomobject]@{ Texto = $fila.Texto; Color = $fila.Color }
+            continue
+        }
+        $sensor = if ($fila.Unidad -eq '°C') { $tempFin[$fila.Id] } else { $fanFin[$fila.Id] }
+        if ($null -eq $sensor) {
+            $lineas += [pscustomobject]@{ Texto = ('    {0}  --' -f $fila.Nombre.PadRight(20)); Color = 'DarkGray' }
+            continue
+        }
+        $cambio = if ($fila.Unidad -eq '°C') { [math]::Round($sensor.Value - $fila.Inicial, 1) } else { [math]::Round($sensor.Value - $fila.Inicial, 0) }
+        if ($cambio -eq 0) {
+            # Sin cambio respecto al inicio: no hace falta ensuciar la línea con un +0,0.
+            $texto = if ($fila.Unidad -eq '°C') {
+                '    {0}  {1,6:N1} °C' -f $fila.Nombre.PadRight(20), $sensor.Value
+            } else {
+                '    {0}  {1,6:N0} RPM' -f $fila.Nombre.PadRight(20), $sensor.Value
+            }
+            $lineas += [pscustomobject]@{ Texto = $texto; Color = 'Cyan' }
+            continue
+        }
+        # Verde si va en la dirección buena (temperatura abajo, más RPM), rojo si va al revés.
+        $sube = if ($fila.Unidad -eq '°C') { $cambio -lt 0 } else { $cambio -gt 0 }
+        $color = if ($sube) { 'Green' } else { 'Red' }
+        if ($fila.Unidad -eq '°C') {
+            $texto = '    {0}  {1,6:N1} °C  ({2:+0.0;-0.0})' -f $fila.Nombre.PadRight(20), $sensor.Value, $cambio
+        } else {
+            $texto = '    {0}  {1,6:N0} RPM  ({2:+0;-0})' -f $fila.Nombre.PadRight(20), $sensor.Value, $cambio
+        }
+        $lineas += [pscustomobject]@{ Texto = $texto; Color = $color }
+    }
+
+    $lineas += [pscustomobject]@{ Texto = ''; Color = 'Gray' }
+    $lineas += [pscustomobject]@{ Texto = $pie; Color = 'Cyan' }
+    return , $lineas
+}
+
+# Redibuja el panel en el mismo sitio: sube el cursor tantas líneas como ocupa y vuelve a
+# escribirlas, rellenando con espacios para borrar el resto. Si la consola no deja mover el
+# cursor se degrada a imprimir en bloque y no se vuelve a intentarlo.
+function Write-Vivo($lineas) {
+    if (-not $consolaInteractiva) {
+        foreach ($linea in $lineas) { Write-Host $linea.Texto -ForegroundColor $linea.Color }
+        return
+    }
+    try {
+        # Ojo: GetCursorPosition devuelve una tupla y en PowerShell solo existen Item1/Item2.
+        # El cursor queda una fila por debajo del panel, así que hay que subir exactamente
+        # una fila por línea escrita; con count-1 el bloque bajaba una línea en cada refresco.
+        $pos = [Console]::GetCursorPosition()
+        [Console]::SetCursorPosition(0, $pos.Item2 - [Math]::Min($lineas.Count, $pos.Item2))
+        $ancho = [Math]::Max(40, [Console]::WindowWidth - 1)
+        foreach ($linea in $lineas) {
+            $texto = $linea.Texto
+            if ($texto.Length -gt $ancho) { $texto = $texto.Substring(0, $ancho) }
+            Write-Host $texto.PadRight($ancho) -ForegroundColor $linea.Color
+        }
+    } catch {
+        $script:consolaInteractiva = $false
+    }
 }
 
 # Devuelve las líneas del informe final como objetos {Texto, Color}: el texto plano va al
@@ -295,27 +444,54 @@ try {
         $motivoCorte = 'sin ventiladores'
     } else {
         $reloj = [System.Diagnostics.Stopwatch]::StartNew()
-        if ($endless) {
-            while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) }
-            $t = 0
-            while (-not [Console]::KeyAvailable) {
-                Write-Host ("`rTiempo a máxima velocidad: {0} segundos (presiona una tecla para terminar)... " -f $t) -NoNewline -ForegroundColor Cyan
-                Start-Sleep -Seconds 1
-                $t++
-            }
-            [void][Console]::ReadKey($true)
-        } else {
-            for ($i = $totalSegundos; $i -gt 0; $i--) {
-                Write-Host ("`rTiempo restante a máxima velocidad: {0} segundos (pulsa Esc para cancelar)... " -f $i) -NoNewline -ForegroundColor Cyan
-                if (Espera-Escape 1000) {
-                    Write-Host ""
-                    Write-Host "Enfriamiento cancelado con Esc." -ForegroundColor Yellow
-                    $motivoCorte = 'Esc'
-                    break
-                }
-            }
+
+        # El panel se dimensiona una sola vez: cabecera y pie cuentan, y encima van los sensores.
+        $anchoNombre = [math]::Max(14, [math]::Min(26, $anchoPanel - 34))
+        $maxFilas = 0
+        if ($consolaInteractiva) {
+            try { $maxFilas = [math]::Max(1, [Console]::WindowHeight - [Console]::GetCursorPosition().Item2 - 2) } catch { $consolaInteractiva = $false }
         }
+        $plantilla = Recorta-Vivo (Get-PlantillaVivo $tempIni $fanIni $anchoNombre) $maxFilas
+        $cabecera = 'Enfriamiento a máxima velocidad' + $(if ($endless) { ' (modo endless)' })
+
+        # Descarta lo que se haya pulsado mientras se activaban los ventiladores, para que una
+        # tecla suelta no termine el ciclo nada más empezar.
+        try { while ([Console]::KeyAvailable) { [void][Console]::ReadKey($true) } } catch { }
+
+        $t = 0
+        $corteTecla = $false
+        $primeraLinea = $true
+        while ($true) {
+            if (-not $endless -and $t -ge $totalSegundos) { break }
+            $pie = if ($endless) {
+                'En marcha: {0} s a máxima velocidad (pulsa para salir)...' -f $t
+            } else {
+                'Quedan {0} s a máxima velocidad (Esc para cancelar)...' -f ($totalSegundos - $t)
+            }
+            $lineas = Get-LineasVivo $plantilla (Read-Sensors 'Temperature') (Read-Sensors 'Fan') $cabecera $pie
+            if ($consolaInteractiva) {
+                Write-Vivo $lineas
+            } else {
+                if ($primeraLinea) {
+                    Write-Informe $lineas     # sin consola real el panel se pinta una sola vez
+                    $primeraLinea = $false
+                }
+                Write-Host ("`r" + $pie) -NoNewline -ForegroundColor Cyan
+            }
+            if (Espera-Tecla 1000 -Cualquiera:$endless) { $corteTecla = $true; break }
+            $t++
+        }
+
         $reloj.Stop()
+        if ($corteTecla) {
+            Write-Host ""
+            Write-Host "Enfriamiento cancelado con Esc." -ForegroundColor Yellow
+            $motivoCorte = 'Esc'
+        } else {
+            # Último cuadro en pantalla, con el estado final de cada sensor.
+            if (-not $consolaInteractiva) { Write-Host "" }
+            Write-Vivo (Get-LineasVivo $plantilla (Read-Sensors 'Temperature') (Read-Sensors 'Fan') $cabecera 'Enfriamiento terminado.')
+        }
     }
     Write-Host ""
 

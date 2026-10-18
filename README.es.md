@@ -2,7 +2,7 @@
 
 [English](README.md) | **Español**
 
-Script de PowerShell que pone todos los ventiladores del equipo al 100 % durante un tiempo fijo (o hasta que pulses una tecla) y después devuelve el control al firmware. Sirve para enfriar el equipo a fondo antes o después de una carga pesada, o para comprobar que los ventiladores responden.
+Script de PowerShell que pone todos los ventiladores del equipo al 100 % durante un tiempo fijo (o hasta que pulses una tecla) y después devuelve el control al firmware. Sirve para enfriar el equipo a fondo antes o después de una carga pesada, o para comprobar que los ventiladores responden. Durante el enfriamiento muestra las temperaturas y las RPM en vivo.
 
 Usa [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) para acceder a los controles de la placa base, la CPU y la GPU.
 
@@ -12,8 +12,8 @@ Usa [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardware
 2. Se niega a arrancar si ya hay un enfriamiento en marcha: dos sesiones a la vez pelearían por los mismos controles y el informe mentdría.
 3. Lee las temperaturas y las RPM iniciales.
 4. Fuerza al 100 % todos los controles de ventilador que expone el hardware y muestra cuáles ha podido controlar. Si no controla ninguno, avisa y termina, porque no sirve de nada esperar el tiempo indicado para no poder enfriar nada.
-5. Espera el tiempo indicado, con cuenta atrás, o hasta que pulses una tecla en modo endless. Durante la cuenta atrás puedes pulsar `Esc` para cortar el enfriamiento antes de tiempo y restablecer los ventiladores de inmediato.
-6. Muestra un resumen de la duración y de las RPM y temperaturas, de inicial a final. Las temperaturas que bajan salen en verde, las que suben en rojo y las que no cambian en azul.
+5. Muestra un panel en vivo que se refresca cada segundo: las temperaturas y las RPM de cada dispositivo, con la variación respecto al inicio (verde cuando va en la buena dirección, temperatura abajo o más RPM; rojo cuando va al revés; sin cambios en azul). Abajo del panel va la cuenta atrás. Espera el tiempo indicado, o hasta que pulses una tecla en modo endless. Durante la cuenta atrás puedes pulsar `Esc` para cortar el enfriamiento antes de tiempo y restablecer los ventiladores de inmediato.
+6. Al terminar deja un último cuadro en pantalla con el estado final de cada sensor y muestra un resumen de la duración y de las RPM y temperaturas, de inicial a final. Las temperaturas que bajan salen en verde, las que suben en rojo y las que no cambian en azul.
 7. Restablece el control automático por firmware y **comprueba que ha funcionado**: si algún ventilador se queda bajo control software, avisa en rojo con qué control es para que lo ajustes a mano.
 8. Guarda el informe en `logs\coolingLog_AAMMDD.txt` (un fichero por día, un bloque por ejecución) y cierra la ventana solo, con una cuenta atrás de 10 segundos para que puedas leer el informe. Si pulsas cualquier tecla antes, cierra al instante. Si has cancelado con `Esc` o no había ventiladores que controlar, la espera es de solo 3 segundos porque no hay informe que mostrar.
 

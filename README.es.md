@@ -11,7 +11,7 @@ Usa [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardware
 1. Pide permisos de administrador si no los tiene (se relanza solo y aparece el aviso de UAC).
 2. Lee las temperaturas y las RPM iniciales.
 3. Fuerza al 100 % todos los controles de ventilador que expone el hardware y muestra cuáles ha podido controlar.
-4. Espera el tiempo indicado, con cuenta atrás, o hasta que pulses una tecla en modo endless.
+4. Espera el tiempo indicado, con cuenta atrás, o hasta que pulses una tecla en modo endless. Durante la cuenta atrás puedes pulsar `Esc` para cortar el enfriamiento antes de tiempo y restablecer los ventiladores de inmediato.
 5. Muestra un resumen de RPM y temperaturas, de inicial a final. Las temperaturas que bajan salen en verde, las que suben en rojo y las que no cambian en azul.
 6. Restablece el control automático por firmware.
 7. Cierra la ventana solo, con una cuenta atrás de 10 segundos. Si pulsas cualquier tecla antes, cierra al instante.

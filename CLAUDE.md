@@ -14,7 +14,7 @@ pwsh -File Fans30.ps1 --time 180     # N seconds
 pwsh -File Fans30.ps1 --endless      # until keypress; ignores --time
 ```
 
-Requires Windows and `pwsh` (not Windows PowerShell). Prebuilt `.lnk` shortcuts (`Fans 1min`, `Fans 3min`, `Fans Endless`) call the script with an absolute path; recreate them if the folder moves.
+Requires Windows and `pwsh` (not Windows PowerShell). Prebuilt `.lnk` shortcuts (`Fans 1min`, `Fans 3min`, `Fans Endless`) call the script with an absolute path; recreate them if the folder moves. In timed mode `Esc` aborts the countdown early; in endless mode any key ends it.
 
 ## Architecture notes
 
@@ -22,4 +22,5 @@ Requires Windows and `pwsh` (not Windows PowerShell). Prebuilt `.lnk` shortcuts 
 - **Fan restore safety**: `FanGuard` is a C# class compiled with `Add-Type`. It holds the list of `IControl` objects and registers a `SetConsoleCtrlHandler` that calls `SetDefault()` on window close, logoff, or shutdown. It must be C# because the handler runs on another thread, where PowerShell script blocks can't run. Any control set with `SetSoftware(100)` must be added to `FanGuard.Controls` first. The `finally` block also calls `FanGuard.Restore()` for normal exit and Ctrl+C.
 - **Sensor reporting**: `Read-Sensors` snapshots Temperature/Fan sensors before and after, keyed by `Sensor.Identifier`, and prints a before/after diff.
 - **Auto-close**: `Espera-Cierre` ends the run instead of blocking on `ReadKey`. It counts down from `$segundosCierre` (10 s, defined at the top of the script) and exits immediately on a keypress; polling `[Console]::KeyAvailable` every 100 ms. It falls back to a plain wait when console input is redirected, so it must not assume a keyboard exists. Both end-of-script paths call it: the missing-DLL error and the `finally` block.
+- **Abort path**: `Espera-Escape` is the `Esc` poll used by the timed countdown. It waits at most one second, consumes keys silently and only reports `$true` for `[ConsoleKey]::Escape`, so other keys never desync the countdown. Cancellation sets `$cancelado`, which skips the sensor report and falls straight into the `finally` block; `$conTeclado` (computed once after elevation) is the shared "is there a keyboard" flag both helpers rely on.
 - Script messages and comments are in Spanish; keep that convention.

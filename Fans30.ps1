@@ -30,15 +30,39 @@ if (-not $isAdmin) {
 
 $libPath = Join-Path $PSScriptRoot "LibreHardwareMonitorLib.dll"
 
+# ¿Hay teclado disponible? False si la entrada de la consola está redirigida (no hay consola).
+$conTeclado = $true
+try { [void][Console]::KeyAvailable } catch { $conTeclado = $false }
+
+# Espera hasta $milisegundos mirando si se pulsa Esc; devuelve $true solo en ese caso.
+function Espera-Escape([int]$milisegundos) {
+    if (-not $conTeclado) {
+        Start-Sleep -Milliseconds $milisegundos
+        return $false
+    }
+    $fin = [DateTime]::UtcNow.AddMilliseconds($milisegundos)
+    $escape = $false
+    while (-not $escape -and [DateTime]::UtcNow -lt $fin) {
+        try {
+            if ([Console]::KeyAvailable) { $escape = ([Console]::ReadKey($true).Key -eq [ConsoleKey]::Escape) }
+        } catch {
+            Start-Sleep -Milliseconds $milisegundos
+            return $false
+        }
+        # Otras teclas se descartan en silencio, pero la cuenta atrás sigue a ritmo real.
+        if (-not $escape) { Start-Sleep -Milliseconds 50 }
+    }
+    return $escape
+}
+
 # Espera $segundos antes de cerrar, o hasta que se pulse una tecla (cierre inmediato).
 # Devuelve $true si el usuario pulsó una tecla. Si la entrada de la consola está
 # redirigida (sin teclado disponible), espera igualmente el tiempo completo.
 function Espera-Cierre([int]$segundos) {
-    $conTeclado = $true
-    try { [void][Console]::KeyAvailable } catch { $conTeclado = $false }
+    $teclado = $conTeclado
 
     if ($segundos -le 0) {
-        if ($conTeclado -and [Console]::KeyAvailable) {
+        if ($teclado -and [Console]::KeyAvailable) {
             [void][Console]::ReadKey($true)
             return $true
         }
@@ -49,14 +73,14 @@ function Espera-Cierre([int]$segundos) {
         Write-Host ("`rCerrando en {0} segundos (pulsa una tecla para cerrar ahora)... " -f $i) -NoNewline -ForegroundColor Cyan
         # Sondea en fracciones de 100 ms para notar la tecla casi al instante.
         for ($t = 0; $t -lt 10; $t++) {
-            if ($conTeclado) {
+            if ($teclado) {
                 try {
                     if ([Console]::KeyAvailable) {
                         [void][Console]::ReadKey($true)
                         return $true
                     }
                 } catch {
-                    $conTeclado = $false
+                    $teclado = $false
                     break
                 }
             }
@@ -138,6 +162,7 @@ function Read-Sensors($type) {
     $result
 }
 
+$cancelado = $false   # Esc durante la cuenta atrás: omite el informe y sale a restaurar
 try {
     $tempIni = Read-Sensors 'Temperature'
     $fanIni  = Read-Sensors 'Fan'
@@ -170,36 +195,43 @@ try {
         [void][Console]::ReadKey($true)
     } else {
         for ($i = $totalSegundos; $i -gt 0; $i--) {
-            Write-Host ("`rTiempo restante a máxima velocidad: {0} segundos... " -f $i) -NoNewline -ForegroundColor Cyan
-            Start-Sleep -Seconds 1
+            Write-Host ("`rTiempo restante a máxima velocidad: {0} segundos (pulsa Esc para cancelar)... " -f $i) -NoNewline -ForegroundColor Cyan
+            if (Espera-Escape 1000) {
+                Write-Host ""
+                Write-Host "Enfriamiento cancelado con Esc." -ForegroundColor Yellow
+                $cancelado = $true
+                break
+            }
         }
     }
     Write-Host ""
 
-    $tempFin = Read-Sensors 'Temperature'
-    $fanFin  = Read-Sensors 'Fan'
+    if (-not $cancelado) {
+        $tempFin = Read-Sensors 'Temperature'
+        $fanFin  = Read-Sensors 'Fan'
 
-    Write-Host ""
-    Write-Host "Ventiladores (RPM inicial -> final):" -ForegroundColor Yellow
-    foreach ($id in $fanFin.Keys) {
-        $ini = if ($fanIni.Contains($id)) { '{0:N0}' -f $fanIni[$id].Value } else { '?' }
-        Write-Host ("  {0}: {1} -> {2:N0} RPM" -f $fanFin[$id].Name, $ini, $fanFin[$id].Value)
-    }
-
-    Write-Host ""
-    Write-Host "Temperaturas (°C inicial -> final; azul = sin cambio):" -ForegroundColor Yellow
-    foreach ($id in $tempFin.Keys) {
-        $b = [math]::Round($tempFin[$id].Value, 1)
-        if (-not $tempIni.Contains($id)) {
-            Write-Host ("  {0}: ? -> {1:N1}" -f $tempFin[$id].Name, $b) -ForegroundColor Cyan
-            continue
+        Write-Host ""
+        Write-Host "Ventiladores (RPM inicial -> final):" -ForegroundColor Yellow
+        foreach ($id in $fanFin.Keys) {
+            $ini = if ($fanIni.Contains($id)) { '{0:N0}' -f $fanIni[$id].Value } else { '?' }
+            Write-Host ("  {0}: {1} -> {2:N0} RPM" -f $fanFin[$id].Name, $ini, $fanFin[$id].Value)
         }
-        $a = [math]::Round($tempIni[$id].Value, 1)
-        if ($a -eq $b) {
-            Write-Host ("  {0}: {1:N1} -> {2:N1}" -f $tempFin[$id].Name, $a, $b) -ForegroundColor Cyan
-        } else {
-            $color = if ($b -lt $a) { 'Green' } else { 'Red' }
-            Write-Host ("  {0}: {1:N1} -> {2:N1} ({3:+0.0;-0.0})" -f $tempFin[$id].Name, $a, $b, ($b - $a)) -ForegroundColor $color
+
+        Write-Host ""
+        Write-Host "Temperaturas (°C inicial -> final; azul = sin cambio):" -ForegroundColor Yellow
+        foreach ($id in $tempFin.Keys) {
+            $b = [math]::Round($tempFin[$id].Value, 1)
+            if (-not $tempIni.Contains($id)) {
+                Write-Host ("  {0}: ? -> {1:N1}" -f $tempFin[$id].Name, $b) -ForegroundColor Cyan
+                continue
+            }
+            $a = [math]::Round($tempIni[$id].Value, 1)
+            if ($a -eq $b) {
+                Write-Host ("  {0}: {1:N1} -> {2:N1}" -f $tempFin[$id].Name, $a, $b) -ForegroundColor Cyan
+            } else {
+                $color = if ($b -lt $a) { 'Green' } else { 'Red' }
+                Write-Host ("  {0}: {1:N1} -> {2:N1} ({3:+0.0;-0.0})" -f $tempFin[$id].Name, $a, $b, ($b - $a)) -ForegroundColor $color
+            }
         }
     }
 

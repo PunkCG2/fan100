@@ -1,6 +1,7 @@
 ﻿# Uso: pwsh -File Fans30.ps1 [--time <segundos>] [--endless]   (por defecto 60 s; --endless ignora --time)
 $totalSegundos = 60
 $endless = $false
+$segundosCierre = 10   # espera antes de cerrar la ventana al terminar (0 = cierra al instante)
 for ($k = 0; $k -lt $args.Count; $k++) {
     if ($args[$k] -match '^--?time$') {
         $k++
@@ -28,10 +29,47 @@ if (-not $isAdmin) {
 }
 
 $libPath = Join-Path $PSScriptRoot "LibreHardwareMonitorLib.dll"
+
+# Espera $segundos antes de cerrar, o hasta que se pulse una tecla (cierre inmediato).
+# Devuelve $true si el usuario pulsó una tecla. Si la entrada de la consola está
+# redirigida (sin teclado disponible), espera igualmente el tiempo completo.
+function Espera-Cierre([int]$segundos) {
+    $conTeclado = $true
+    try { [void][Console]::KeyAvailable } catch { $conTeclado = $false }
+
+    if ($segundos -le 0) {
+        if ($conTeclado -and [Console]::KeyAvailable) {
+            [void][Console]::ReadKey($true)
+            return $true
+        }
+        return $false
+    }
+
+    for ($i = $segundos; $i -gt 0; $i--) {
+        Write-Host ("`rCerrando en {0} segundos (pulsa una tecla para cerrar ahora)... " -f $i) -NoNewline -ForegroundColor Cyan
+        # Sondea en fracciones de 100 ms para notar la tecla casi al instante.
+        for ($t = 0; $t -lt 10; $t++) {
+            if ($conTeclado) {
+                try {
+                    if ([Console]::KeyAvailable) {
+                        [void][Console]::ReadKey($true)
+                        return $true
+                    }
+                } catch {
+                    $conTeclado = $false
+                    break
+                }
+            }
+            Start-Sleep -Milliseconds 100
+        }
+    }
+    Write-Host ""
+    return $false
+}
+
 if (-not (Test-Path $libPath)) {
     Write-Host "No se encuentra LibreHardwareMonitorLib.dll en $PSScriptRoot" -ForegroundColor Red
-    Write-Host "Presiona cualquier tecla para cerrar..." -ForegroundColor Cyan
-    [void]$Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    [void](Espera-Cierre $segundosCierre)
     exit 1
 }
 Add-Type -Path $libPath
@@ -173,6 +211,7 @@ try {
     $computer.Close()
 
     Write-Host ""
-    Write-Host "Presiona cualquier tecla para cerrar..." -ForegroundColor Cyan
-    [void]$Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    if (Espera-Cierre $segundosCierre) {
+        Write-Host "Cerrando ahora (tecla pulsada)." -ForegroundColor Cyan
+    }
 }

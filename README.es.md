@@ -14,6 +14,7 @@ Usa [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardware
 4. Espera el tiempo indicado, con cuenta atrás, o hasta que pulses una tecla en modo endless.
 5. Muestra un resumen de RPM y temperaturas, de inicial a final. Las temperaturas que bajan salen en verde, las que suben en rojo y las que no cambian en azul.
 6. Restablece el control automático por firmware.
+7. Cierra la ventana solo, con una cuenta atrás de 10 segundos. Si pulsas cualquier tecla antes, cierra al instante.
 
 Los ventiladores vuelven a control automático aunque cierres la ventana, cierres sesión o apagues el equipo con el script en marcha.
 

@@ -179,7 +179,55 @@ if ($yaHayInstancia) {
     Write-Host "Aviso: se ignora el enfriamiento en marcha porque has pasado --forzar." -ForegroundColor Yellow
 }
 
-if (-not (Test-Path $libPath)) {
+# Si falta LibreHardwareMonitorLib.dll, la baja del paquete NuGet oficial. Versión y hash fijos:
+# es la DLL con la que se ha probado el script, y el hash garantiza que no se ha alterado por
+# el camino. Al subir de versión hay que actualizar los tres valores juntos.
+$versionLib = '0.9.6'
+$hashesLib = @{
+    X64   = '984B539048880D37257A5EDEAB36378152C54943069F400D68A34565292D35DA'   # runtimes/win-x64/lib/net10.0
+    Arm64 = 'F79B278808E5081446A31EC699347AAC3ACBC1B5532CE0EDDDC44D819A0E5B03'   # runtimes/win-arm64/lib/net10.0
+}
+function Asegura-Libreria {
+    if (Test-Path $libPath) { return $true }
+
+    Write-Host "No se encuentra LibreHardwareMonitorLib.dll: descargándola de NuGet (versión $versionLib)..." -ForegroundColor Yellow
+    $arq = [Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+    if (-not $hashesLib.ContainsKey($arq)) {
+        Write-Host "  Arquitectura no soportada para la descarga automática: $arq" -ForegroundColor Red
+        return $false
+    }
+    $entrada = "runtimes/win-$($arq.ToLower())/lib/net10.0/LibreHardwareMonitorLib.dll"
+    $paquete = Join-Path ([IO.Path]::GetTempPath()) "librehardwaremonitorlib.$versionLib.$PID.nupkg"
+    $temporal = "$libPath.descarga"
+    try {
+        $ProgressPreference = 'SilentlyContinue'   # la barra de progreso ralentiza mucho la descarga
+        Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/librehardwaremonitorlib/$versionLib/librehardwaremonitorlib.$versionLib.nupkg" -OutFile $paquete -ErrorAction Stop
+
+        # El .nupkg es un zip: se saca solo la DLL de esta arquitectura.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($paquete)
+        try {
+            $dll = $zip.GetEntry($entrada)
+            if (-not $dll) { throw "el paquete no contiene $entrada" }
+            [IO.Compression.ZipFileExtensions]::ExtractToFile($dll, $temporal, $true)
+        } finally {
+            $zip.Dispose()
+        }
+
+        $hash = (Get-FileHash -LiteralPath $temporal -Algorithm SHA256).Hash
+        if ($hash -ne $hashesLib[$arq]) { throw "el hash no coincide (esperado $($hashesLib[$arq]), obtenido $hash)" }
+        Move-Item -LiteralPath $temporal -Destination $libPath -Force
+        Write-Host "  Descargada y verificada." -ForegroundColor Green
+        return $true
+    } catch {
+        Write-Host "  No se ha podido descargar: $($_.Exception.Message)" -ForegroundColor Red
+        return $false
+    } finally {
+        Remove-Item -LiteralPath $paquete, $temporal -Force -ErrorAction SilentlyContinue
+    }
+}
+
+if (-not (Asegura-Libreria)) {
     Write-Host "No se encuentra LibreHardwareMonitorLib.dll en $PSScriptRoot" -ForegroundColor Red
     Libera-Cerrojo
     [void](Espera-Cierre $segundosCierre)

@@ -9,14 +9,32 @@ Usa [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardware
 ## Qué hace
 
 1. Pide permisos de administrador si no los tiene (se relanza solo y aparece el aviso de UAC).
-2. Lee las temperaturas y las RPM iniciales.
-3. Fuerza al 100 % todos los controles de ventilador que expone el hardware y muestra cuáles ha podido controlar.
-4. Espera el tiempo indicado, con cuenta atrás, o hasta que pulses una tecla en modo endless. Durante la cuenta atrás puedes pulsar `Esc` para cortar el enfriamiento antes de tiempo y restablecer los ventiladores de inmediato.
-5. Muestra un resumen de RPM y temperaturas, de inicial a final. Las temperaturas que bajan salen en verde, las que suben en rojo y las que no cambian en azul.
-6. Restablece el control automático por firmware.
-7. Cierra la ventana solo, con una cuenta atrás de 10 segundos para que puedas leer el informe. Si pulsas cualquier tecla antes, cierra al instante. Si has cancelado con `Esc`, la espera es de solo 3 segundos porque no hay informe que mostrar.
+2. Se niega a arrancar si ya hay un enfriamiento en marcha: dos sesiones a la vez pelearían por los mismos controles y el informe mentdría.
+3. Lee las temperaturas y las RPM iniciales.
+4. Fuerza al 100 % todos los controles de ventilador que expone el hardware y muestra cuáles ha podido controlar. Si no controla ninguno, avisa y termina, porque no sirve de nada esperar el tiempo indicado para no poder enfriar nada.
+5. Espera el tiempo indicado, con cuenta atrás, o hasta que pulses una tecla en modo endless. Durante la cuenta atrás puedes pulsar `Esc` para cortar el enfriamiento antes de tiempo y restablecer los ventiladores de inmediato.
+6. Muestra un resumen de la duración y de las RPM y temperaturas, de inicial a final. Las temperaturas que bajan salen en verde, las que suben en rojo y las que no cambian en azul.
+7. Restablece el control automático por firmware y **comprueba que ha funcionado**: si algún ventilador se queda bajo control software, avisa en rojo con qué control es para que lo ajustes a mano.
+8. Guarda el informe en `logs\coolingLog_AAMMDD.txt` (un fichero por día, un bloque por ejecución) y cierra la ventana solo, con una cuenta atrás de 10 segundos para que puedas leer el informe. Si pulsas cualquier tecla antes, cierra al instante. Si has cancelado con `Esc` o no había ventiladores que controlar, la espera es de solo 3 segundos porque no hay informe que mostrar.
 
 Los ventiladores vuelven a control automático aunque cierres la ventana, cierres sesión o apagues el equipo con el script en marcha.
+
+## Registros (logs)
+
+Cada ejecución completada añade un bloque a `logs\coolingLog_AAMMDD.txt` (un fichero por día, se crea solo). Cada bloque guarda la fecha y hora, el modo, cuánto duró el enfriamiento y los mismos valores que se ven en pantalla:
+
+```text
+=== 2026-10-17 21:34:05 | --time 60 ===
+Duración del enfriamiento: 60,0 s (--time 60)
+
+Ventiladores (RPM inicial -> final):
+  CPU / Fan1: 1.200 -> 2.400 RPM
+
+Temperaturas (°C inicial -> final; azul = sin cambio):
+  CPU / Package: 60,0 -> 52,3 (-7,7)
+```
+
+Las ejecuciones canceladas con `Esc` no se registran: no hay informe final que guardar. La carpeta `logs` está en `.gitignore`.
 
 ## Requisitos
 

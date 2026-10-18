@@ -9,14 +9,32 @@ It uses [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHard
 ## What it does
 
 1. Asks for administrator rights if it does not have them (it relaunches itself and shows the UAC prompt).
-2. Reads the initial temperatures and fan RPM.
-3. Forces every fan control the hardware exposes to 100% and lists which ones it could control.
-4. Waits for the chosen time with a countdown, or until you press a key in endless mode. During the countdown you can press `Esc` to cut cooling short and restore the fans right away.
-5. Prints a summary of RPM and temperatures, from start to end. Temperatures that dropped are green, those that rose are red, and those that did not change are blue.
-6. Restores automatic firmware control.
-7. Closes the window on its own after a 10 second countdown so you can read the report. Press any key before that and it closes right away. If you aborted with `Esc` there is no report to read, so the wait drops to 3 seconds.
+2. Refuses to start if a cooling run is already in progress: two sessions at once would fight over the same controls and the report would lie.
+3. Reads the initial temperatures and fan RPM.
+4. Forces every fan control the hardware exposes to 100% and lists which ones it could control. If it could control none, it says so and stops, because there is no point in waiting when nothing can be cooled.
+5. Waits for the chosen time with a countdown, or until you press a key in endless mode. During the countdown you can press `Esc` to cut cooling short and restore the fans right away.
+6. Prints a summary of the duration, RPM and temperatures, from start to end. Temperatures that dropped are green, those that rose are red, and those that did not change are blue.
+7. Restores automatic firmware control and **checks that it worked**: if a fan is left under software control it warns in red, naming the control, so you can set it by hand.
+8. Saves the report to `logs\coolingLog_AAMMDD.txt` (one file per day, one block per run) and closes the window on its own after a 10 second countdown so you can read the report. Press any key before that and it closes right away. If you aborted with `Esc`, or there were no controllable fans, there is no report to read, so the wait drops to 3 seconds.
 
 Fans go back to automatic control even if you close the window, log off or shut down while the script is running.
+
+## Logs
+
+Every completed run appends a block to `logs\coolingLog_AAMMDD.txt` (one file per day, created automatically). Each block holds the date and time, the mode, how long the cooling lasted and the same values shown on screen:
+
+```text
+=== 2026-10-17 21:34:05 | --time 60 ===
+Duración del enfriamiento: 60,0 s (--time 60)
+
+Ventiladores (RPM inicial -> final):
+  CPU / Fan1: 1.200 -> 2.400 RPM
+
+Temperaturas (°C inicial -> final; azul = sin cambio):
+  CPU / Package: 60,0 -> 52,3 (-7,7)
+```
+
+Runs cancelled with `Esc` are not logged: there is no final report to store. The `logs` folder is in `.gitignore`.
 
 ## Requirements
 

@@ -12,13 +12,15 @@ Single PowerShell 7 script, `Fans30.ps1`, that forces all motherboard/GPU/CPU fa
 pwsh -File Fans30.ps1                # 60 s (default)
 pwsh -File Fans30.ps1 --time 180     # N seconds
 pwsh -File Fans30.ps1 --endless      # until keypress; ignores --time
+Fans.cmd --time 180                  # same flags; installs PowerShell 7.6 first if missing
 ```
 
 Requires Windows and `pwsh` (not Windows PowerShell). Prebuilt `.lnk` shortcuts (`Fans 1min`, `Fans 3min`, `Fans Endless`) call the script with an absolute path; recreate them if the folder moves. In timed mode `Esc` aborts the countdown early; in endless mode any key ends it.
 
 ## Architecture notes
 
-- **Self-elevation**: if not admin, the script relaunches itself with `Start-Process pwsh -Verb RunAs`, forwarding `$args` via `-join ' '`. Arguments containing spaces would break; current flags don't.
+- **Launcher `Fans.cmd`**: covers the one dependency the script cannot install itself, PowerShell 7.6+ (the DLL targets .NET 10, so the check is `[Environment]::Version.Major -ge 10`, not the PS version). It looks for `pwsh` on PATH, then in `%ProgramFiles%\PowerShell\7`, installs or upgrades `Microsoft.PowerShell` with winget if needed, and runs the script with the full path, because the console does not see the new PATH. It must stay ASCII with CRLF line endings (`.gitattributes` enforces CRLF): with LF, cmd misparses the file. Never put parentheses in a `rem` inside a `( )` block. `Fans30.ps1` repeats the .NET check at the top, before elevation, for people who run it directly.
+- **Self-elevation**: if not admin, the script relaunches itself with `Start-Process -Verb RunAs`, forwarding `$args` via `-join ' '`. Arguments containing spaces would break; current flags don't. It uses `pwsh` by name when it is on PATH (the Store build lives under `WindowsApps`, and launching that path directly with RunAs is unreliable), otherwise `[Environment]::ProcessPath`, which is the case right after `Fans.cmd` installs it.
 - **Single instance**: after elevation it takes the named mutex `Local\Fan100.Enfriamiento`. Two traps here, both already paid for once:
   - `Mutex.WaitOne` returns `$true` when *this* process acquired it, so `$yaHayInstancia = -not $mutex.WaitOne(0, $false)`. Inverting it made the script always report "another run is in progress" and never start. Mutexes are also re-entrant per thread, so a test in the same process re-acquires its own mutex and sees a false negative; each check needs its own process.
   - `AbandonedMutexException` is the *good* path: the previous holder was killed, the exception still grants ownership, so keep going.

@@ -39,14 +39,16 @@ Las ejecuciones canceladas con `Esc` no se registran: no hay informe final que g
 ## Requisitos
 
 - Windows
-- [PowerShell 7](https://github.com/PowerShell/PowerShell) (`pwsh`). Windows PowerShell 5.1 (`powershell.exe`) no está soportado.
+- [PowerShell 7](https://github.com/PowerShell/PowerShell) (`pwsh`), versión 7.6 o posterior (la DLL es para .NET 10). Windows PowerShell 5.1 (`powershell.exe`) no está soportado. Si no lo tienes, `Fans.cmd` lo instala con `winget` (`winget install Microsoft.PowerShell`).
 - `LibreHardwareMonitorLib.dll` en la misma carpeta que el script. Si falta, el script descarga la versión 0.9.6 del [paquete NuGet oficial](https://www.nuget.org/packages/LibreHardwareMonitorLib) y comprueba su hash SHA-256 antes de usarla.
 - El driver [PawnIO](https://pawnio.eu). Si falta, el script lo instala solo con `winget` la primera vez (`winget install namazso.PawnIO`). Sin él, la librería no llega al hardware: las temperaturas salen a 0 y no aparece ningún ventilador.
 - Un equipo cuyo hardware permita controlar los ventiladores por software. Los controles sin soporte se muestran como `[--] ... (sin control)`. En la mayoría de portátiles el ventilador lo gobierna el controlador embebido (EC) y LibreHardwareMonitor no puede controlarlo.
 
 ## Uso
 
-Abre PowerShell 7 en la carpeta del proyecto y ejecuta:
+La primera vez en un equipo nuevo, lo más sencillo es hacer doble clic en `Fans.cmd` (o ejecutarlo con las mismas opciones, por ejemplo `Fans.cmd --time 180`). Instala PowerShell 7.6 si falta y lanza el script, que a su vez descarga la DLL e instala PawnIO si hace falta.
+
+Si ya tienes PowerShell 7, abre una ventana en la carpeta del proyecto y ejecuta:
 
 ```powershell
 pwsh -File Fans30.ps1                # 60 segundos (por defecto)

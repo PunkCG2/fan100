@@ -1,0 +1,2 @@
+# cmd.exe interpreta mal los .cmd con finales de linea LF
+*.cmd text eol=crlf

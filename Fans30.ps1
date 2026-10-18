@@ -23,13 +23,26 @@ for ($k = 0; $k -lt $args.Count; $k++) {
     }
 }
 
+# LibreHardwareMonitorLib es para .NET 10 (PowerShell 7.6+). Con un pwsh anterior Add-Type falla
+# con un error críptico; mejor decirlo antes de pedir permisos. Fans.cmd lo instala si falta.
+if ([Environment]::Version.Major -lt 10) {
+    Write-Host ("Este script necesita PowerShell 7.6 o posterior (tienes {0}, sobre .NET {1})." -f $PSVersionTable.PSVersion, [Environment]::Version) -ForegroundColor Red
+    Write-Host "Lánzalo con Fans.cmd para instalarlo, o: winget install Microsoft.PowerShell" -ForegroundColor Red
+    Start-Sleep -Seconds 10
+    exit 1
+}
+
 $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object System.Security.Principal.WindowsPrincipal($identity)
 $isAdmin = $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
     Write-Host "Solicitando permisos de Administrador..." -ForegroundColor Yellow
-    Start-Process pwsh -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $($args -join ' ')" -Verb RunAs
+    # Recién instalado por Fans.cmd, el PATH heredado todavía no incluye pwsh: entonces se relanza
+    # con este mismo ejecutable. Si está en el PATH se usa el nombre, porque el pwsh de la Store
+    # vive en WindowsApps y lanzar esa ruta directamente con RunAs no es fiable.
+    $exePwsh = if (Get-Command pwsh -ErrorAction SilentlyContinue) { 'pwsh' } else { [Environment]::ProcessPath }
+    Start-Process $exePwsh -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $($args -join ' ')" -Verb RunAs
     exit
 }
 

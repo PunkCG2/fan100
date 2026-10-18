@@ -41,7 +41,8 @@ Runs cancelled with `Esc` are not logged: there is no final report to store. The
 - Windows
 - [PowerShell 7](https://github.com/PowerShell/PowerShell) (`pwsh`). Windows PowerShell 5.1 (`powershell.exe`) is not supported.
 - `LibreHardwareMonitorLib.dll` in the same folder as the script
-- Hardware whose fans can be controlled by software. Controls that are not supported are shown as `[--] ... (sin control)`.
+- The [PawnIO](https://pawnio.eu) driver. If it is missing, the script installs it with `winget` on first run (`winget install namazso.PawnIO`). Without it the library cannot reach the hardware: temperatures read 0 and no fans show up.
+- Hardware whose fans can be controlled by software. Controls that are not supported are shown as `[--] ... (sin control)`. On most laptops the fan is driven by the embedded controller (EC), which LibreHardwareMonitor cannot control.
 
 ## Usage
 

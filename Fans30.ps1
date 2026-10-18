@@ -185,6 +185,34 @@ if (-not (Test-Path $libPath)) {
     [void](Espera-Cierre $segundosCierre)
     exit 1
 }
+
+# LibreHardwareMonitorLib 0.9.5+ necesita el driver PawnIO para llegar al hardware. Sin él no
+# falla: devuelve temperaturas a 0, voltajes basura y ningún ventilador controlable, así que
+# el único síntoma era "sin ventiladores". Se comprueba el servicio y, si falta, se instala
+# con winget (ya somos administrador). Si no se puede, se avisa y se sigue igualmente.
+function Asegura-PawnIO {
+    if (Get-Service -Name PawnIO -ErrorAction SilentlyContinue) { return $true }
+
+    Write-Host "No se encuentra el driver PawnIO, necesario para controlar los ventiladores." -ForegroundColor Yellow
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Host "  winget no está disponible: instala PawnIO a mano desde https://pawnio.eu" -ForegroundColor Red
+        return $false
+    }
+
+    Write-Host "  Instalándolo con winget (solo hace falta la primera vez)..." -ForegroundColor Yellow
+    winget install --id namazso.PawnIO --exact --silent --accept-package-agreements --accept-source-agreements --disable-interactivity | Out-Host   # a pantalla, no al valor devuelto
+    $codigo = $LASTEXITCODE
+
+    if (Get-Service -Name PawnIO -ErrorAction SilentlyContinue) {
+        Write-Host "  PawnIO instalado." -ForegroundColor Green
+        return $true
+    }
+    Write-Host ("  No se ha podido instalar PawnIO (winget terminó con código {0})." -f $codigo) -ForegroundColor Red
+    Write-Host "  Instálalo a mano con: winget install namazso.PawnIO   o desde https://pawnio.eu" -ForegroundColor Red
+    return $false
+}
+$hayPawnIO = Asegura-PawnIO
+
 Add-Type -Path $libPath
 
 # Restaura los controles si se cierra la ventana, cierra sesión o apaga (el handler corre en otro hilo, por eso va en C#).
@@ -571,7 +599,12 @@ try {
 
     if ($controles -eq 0) {
         Write-Host "No se ha podido controlar ningún ventilador: no hay nada que enfriar." -ForegroundColor Red
-        Write-Host "El hardware no expone controles compatibles con LibreHardwareMonitor." -ForegroundColor Red
+        if ($hayPawnIO) {
+            Write-Host "El hardware no expone controles compatibles con LibreHardwareMonitor." -ForegroundColor Red
+            Write-Host "En portátiles es lo normal: el ventilador lo gobierna el firmware (EC), no la placa." -ForegroundColor Red
+        } else {
+            Write-Host "Falta el driver PawnIO: sin él no se puede llegar al hardware. Instálalo y vuelve a probar." -ForegroundColor Red
+        }
         $motivoCorte = 'sin ventiladores'
     } else {
         $reloj = [System.Diagnostics.Stopwatch]::StartNew()

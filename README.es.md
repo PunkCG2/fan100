@@ -41,7 +41,8 @@ Las ejecuciones canceladas con `Esc` no se registran: no hay informe final que g
 - Windows
 - [PowerShell 7](https://github.com/PowerShell/PowerShell) (`pwsh`). Windows PowerShell 5.1 (`powershell.exe`) no está soportado.
 - `LibreHardwareMonitorLib.dll` en la misma carpeta que el script
-- Un equipo cuyo hardware permita controlar los ventiladores por software. Los controles sin soporte se muestran como `[--] ... (sin control)`.
+- El driver [PawnIO](https://pawnio.eu). Si falta, el script lo instala solo con `winget` la primera vez (`winget install namazso.PawnIO`). Sin él, la librería no llega al hardware: las temperaturas salen a 0 y no aparece ningún ventilador.
+- Un equipo cuyo hardware permita controlar los ventiladores por software. Los controles sin soporte se muestran como `[--] ... (sin control)`. En la mayoría de portátiles el ventilador lo gobierna el controlador embebido (EC) y LibreHardwareMonitor no puede controlarlo.
 
 ## Uso
 
